@@ -5,6 +5,7 @@ import aws_cdk as cdk
 
 from transactions.transactions_stack import TransactionsStack
 
+from reward.rewards_stack import RewardsStack
 
 app = cdk.App()
 TransactionsStack(app, "TransactionsStack",
@@ -24,5 +25,5 @@ TransactionsStack(app, "TransactionsStack",
 
     # For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html
     )
-
+RewardsStack(app, "RewardsStack")
 app.synth()
