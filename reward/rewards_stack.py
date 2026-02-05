@@ -5,7 +5,9 @@ from aws_cdk import (
     aws_events as events,
     aws_events_targets as targets,
     aws_ssm as ssm,
-    RemovalPolicy
+    RemovalPolicy,
+    aws_cloudwatch as cw,
+    aws_cloudwatch_actions as cw_actions,
 )
 from aws_cdk.aws_lambda_python_alpha import PythonLayerVersion
 from constructs import Construct
@@ -25,6 +27,11 @@ class RewardsStack(Stack):
         bus_name = ssm.StringParameter.value_for_string_parameter(self, "/bold/infra/payment-bus-name")
         bus = events.EventBus.from_event_bus_name(self, "ImportedBus", bus_name)
 
+        powertools_layer = _lambda.LayerVersion.from_layer_version_arn(
+            self, "PowertoolsLayer",
+            layer_version_arn="arn:aws:lambda:us-east-2:017000801446:layer:AWSLambdaPowertoolsPythonV2:60"
+        )
+        
         layer = PythonLayerVersion(self, "LibLayer", entry="layers/pydantic_layer", compatible_runtimes=[_lambda.Runtime.PYTHON_3_11])
         
         # 3. Función Procesadora
@@ -33,7 +40,7 @@ class RewardsStack(Stack):
             runtime=_lambda.Runtime.PYTHON_3_11,
             handler="rewards.infrastructure.handlers.rewards_processor.handler",
             code=_lambda.Code.from_asset("src"),
-            layers=[layer],
+            layers=[powertools_layer, layer],
             environment={"REWARDS_TABLE": table.table_name},
         )
         table.grant_read_write_data(rewards_fn)
@@ -48,3 +55,12 @@ class RewardsStack(Stack):
             )
         )
         rule.add_target(targets.LambdaFunction(rewards_fn))
+
+        # 5. Alarmas
+        error_alarm = cw.Alarm(self, "RewardsErrorAlarm",
+            metric=rewards_fn.metric_errors(),
+            threshold=1, # Con 1 solo error ya nos interesa saber
+            evaluation_periods=1,
+            datapoints_to_alarm=1,
+            alarm_description="Alarma si falla el procesamiento de puntos"
+        )

@@ -1,5 +1,4 @@
 import os
-
 import pytest
 from unittest.mock import MagicMock
 
@@ -19,3 +18,4 @@ def lambda_context():
     context.aws_request_id = "test-id-123"
     context.invoked_function_arn = "arn:aws:test"
     return context
+    

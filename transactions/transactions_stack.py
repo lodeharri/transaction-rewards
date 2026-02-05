@@ -37,11 +37,19 @@ class TransactionsStack(Stack):
             description="Nombre del Bus de pagos para otros microservicios"
         )
 
+        dlq = sqs.Queue(self, "IngestionDLQ",
+            retention_period=Duration.days(14) # Guardamos 14 días para investigar
+        )
+
         # 3. Buffer de Alta Concurrencia (SQS)
         queue = sqs.Queue(
             self, "IngestionQueue",
             queue_name=InfrastructureNames.INGESTION_QUEUE,
-            visibility_timeout=Duration.seconds(30)
+            visibility_timeout=Duration.seconds(30),
+            dead_letter_queue=sqs.DeadLetterQueue(
+                queue=dlq,
+                max_receive_count=3
+            )
         )
 
         # 4. API Gateway con Integración Directa a SQS (Sin Lambda de entrada)
@@ -63,15 +71,22 @@ class TransactionsStack(Stack):
         )
         api.root.add_resource("ingest").add_method("POST", sqs_integration, method_responses=[{"statusCode": "200"}])
 
+        powertools_layer = _lambda.LayerVersion.from_layer_version_arn(
+            self, "PowertoolsLayer",
+            layer_version_arn="arn:aws:lambda:us-east-2:017000801446:layer:AWSLambdaPowertoolsPythonV2:60"
+        )
+
         # 5. Lambda Processor con Permisos (El "Trabajador")
         layer = PythonLayerVersion(self, "LibLayer", entry="layers/pydantic_layer", compatible_runtimes=[_lambda.Runtime.PYTHON_3_11])
 
+        # 5. Función Procesadora con tracing
         processor_fn = _lambda.Function(
             self, "ProcessorFn",
             runtime=_lambda.Runtime.PYTHON_3_11,
             handler="infrastructure.handlers.async_processor.handler",
             code=_lambda.Code.from_asset("src"), # SOLO apuntamos a 'src'
-            layers=[layer],
+            layers=[powertools_layer, layer],
+            tracing=_lambda.Tracing.ACTIVE,
             environment={
                 "TABLE_NAME": table.table_name,
                 "BUS_NAME": bus.event_bus_name

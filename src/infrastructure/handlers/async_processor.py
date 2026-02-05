@@ -4,8 +4,11 @@ from pydantic import BaseModel, ValidationError
 from core.application.use_cases import ProcessIngestionUseCase
 from infrastructure.adapters.dynamodb_repo import DynamoDBRepository
 from infrastructure.adapters.eventbridge_bus import EventBridgeMessenger
+from shared.observability import get_tracer
 from aws_lambda_powertools import Logger
 
+import pydantic
+print(f"DEBUG: Pydantic version: {pydantic.VERSION}")
 # Esquema de validación Pydantic
 class PaymentInput(BaseModel):
     idempotency_key: str
@@ -16,8 +19,10 @@ class PaymentInput(BaseModel):
 repo = DynamoDBRepository(os.environ['TABLE_NAME'])
 bus = EventBridgeMessenger(os.environ['BUS_NAME'])
 use_case = ProcessIngestionUseCase(repo, bus)
+tracer = get_tracer("IngestionService")
 logger = Logger(service="IngestionService")
 
+@tracer.capture_lambda_handler
 @logger.inject_lambda_context
 def handler(event, context):
     batch_item_failures = []
